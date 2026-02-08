@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.local
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+artifacts/
+cache/
+
+# IDEs
+.vscode/
+.idea/
+
+# System
+.DS_Store
+
+# ZK Artifacts (Large Files)
+*.pk
+*.srs
+*.ezkl

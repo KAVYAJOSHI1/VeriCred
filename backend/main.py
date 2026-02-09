@@ -11,7 +11,7 @@ import database  # Import the new DB module
 database.init_db()
 
 # Load Scaler Params
-SCALER_PARAMS_PATH = "ai/scaler_params.json"
+SCALER_PARAMS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai", "scaler_params.json")
 if os.path.exists(SCALER_PARAMS_PATH):
     with open(SCALER_PARAMS_PATH, "r") as f:
         scaler_params = json.load(f)
@@ -22,13 +22,25 @@ else:
     SCALER_MEAN = [0] * 5
     SCALER_SCALE = [1] * 5
 
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI()
 
-# Paths (Assuming running from root)
-MODEL_PATH = "zk-circuit/model.ezkl"
-PK_PATH = "zk-circuit/key.pk"
-SETTINGS_PATH = "zk-circuit/settings.json"
-SRS_PATH = "zk-circuit/kzg15.srs"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Paths
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "zk-circuit", "model.ezkl")
+PK_PATH = os.path.join(BASE_DIR, "zk-circuit", "key.pk")
+SETTINGS_PATH = os.path.join(BASE_DIR, "zk-circuit", "settings.json")
+SRS_PATH = os.path.join(BASE_DIR, "zk-circuit", "kzg15.srs")
 
 class CreditInput(BaseModel):
     # Example fields matching training data
@@ -39,7 +51,7 @@ class CreditInput(BaseModel):
     open_acc: int
 
 @app.post("/generate-proof")
-async def generate_proof(data: CreditInput):
+def generate_proof(data: CreditInput):
     try:
         # 1. Format input for EZKL
         # Use loaded scaler params
@@ -80,8 +92,8 @@ async def generate_proof(data: CreditInput):
         # But we need loop if they verify internally.
         
         print("Generating witness...")
-        res = ezkl.gen_witness(input_path, MODEL_PATH, witness_path, settings_path=SETTINGS_PATH)
-        if asyncio.iscoroutine(res): await res
+        res = ezkl.gen_witness(input_path, MODEL_PATH, witness_path)
+        if asyncio.iscoroutine(res): asyncio.run(res)
         
         print("Generating proof...")
         res = ezkl.prove(
@@ -89,19 +101,18 @@ async def generate_proof(data: CreditInput):
             MODEL_PATH,
             PK_PATH,
             proof_path,
-            srs_path=SRS_PATH,
-            evidence_path=None,
-            proof_type="Single", # or similar
-            settings_path=SETTINGS_PATH
+            srs_path=SRS_PATH
         )
-        if asyncio.iscoroutine(res): await res
+        if asyncio.iscoroutine(res): asyncio.run(res)
         
         # 4. Read proof
-        with open(proof_path + ".json" if not os.path.exists(proof_path) and os.path.exists(proof_path + ".json") else proof_path, "r") as f:
+        with open(proof_path, "rb") as f:
              # ezkl prove output format?
              # Usually binary or json depending on args.
              # If proof_path provided, it writes there.
-             pass
+             proof_bytes = f.read()
+             if isinstance(proof_bytes, str):
+                 proof_bytes = proof_bytes.encode('utf-8')
         
         # Actually simplest is just return "success" mock for now if ezkl is unstable.
         # But let's try to return the proof content.
@@ -110,7 +121,7 @@ async def generate_proof(data: CreditInput):
         print("Verifying proof locally...")
         vk_path = "zk-circuit/key.vk"
         res = ezkl.verify(proof_path, SETTINGS_PATH, vk_path, srs_path=SRS_PATH)
-        if asyncio.iscoroutine(res): await res
+        if asyncio.iscoroutine(res): asyncio.run(res)
         
         if res:
             print("Proof verified locally.")

@@ -1,90 +1,119 @@
-# VeriCred - Zero-Knowledge Credit Scoring System
+# VeriCred - Privacy-Preserving Zero-Knowledge Credit Scoring
 
-**VeriCred** is a privacy-first application that allows users to generate a verifiable proof of their creditworthiness using Zero-Knowledge Machine Learning (ZKML), without ever revealing their sensitive financial data on-chain.
-
-![Status](https://img.shields.io/badge/Status-POC-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
+![Status](https://img.shields.io/badge/Status-POC-blue)
+![ZKML](https://img.shields.io/badge/ZKML-Powered-purple)
 
-## 🌟 Key Features
+**VeriCred** is a decentralized, privacy-first application that enables users to generate verifiable cryptographic proofs of their creditworthiness using **Zero-Knowledge Machine Learning (ZKML)**. By leveraging **EZKL** and **Halo2**, users can prove they meet credit requirements without ever revealing their sensitive financial data (income, debt, age) to the verifier or the blockchain.
 
-*   **Privacy-Preserving**: Financial data (Income, Debt, Age) never leaves the user's device/backend in plain text.
-*   **ZK-SNARKs**: Uses **EZKL** and **Halo2** to generate cryptographic proofs that a credit score computation was performed correctly.
-*   **On-Chain Verification**: Smart contract (`Halo2Verifier`) verifies the proof on the Ethereum/Sepolia blockchain.
-*   **Tamper-Proof**: The credit score model is committed on-chain; any deviation invalidates the proof.
+## 🌟 Key Innovations
 
-## 🏗 Architecture
+*   **Zero-Knowledge Privacy**: Financial data remains strictly on the client-side/local environment. Only the *proof* of computation forms the transaction.
+*   **Trustless Verification**: The **Halo2Verifier** smart contract on Ethereum (Sepolia/Localhost) mathematically guarantees the validity of the credit score without seeing the inputs.
+*   **Tamper-Proof AI**: The credit scoring model (ONNX) is committed to the blockchain via a cryptographic commitment. Any modification to the model inputs or weights invalidates the proof.
+*   **Hybrid Architecture**: seamless integration of off-chain ZK computation with on-chain verification.
 
-1.  **AI Model (`/ai`)**: A PyTorch Neural Network trained on credit data and exported to ONNX.
-2.  **ZK Circuits (`/zk-circuit`)**: The ONNX model is converted into a Halo2 circuit using EZKL.
-3.  **Backend (`/backend`)**: FastAPI server that handles proof generation and stores request history in SQLite.
-4.  **Blockchain (`/blockchain`)**: Hardhat project containing the Verifier contract.
-5.  **Frontend (`/frontend`)**: Next.js & Tailwind CSS interface for users to interact with the system.
+## 🏗 System Architecture
 
-## 🚀 Quick Start
-
-### Prerequisites
-*   Node.js (v18+)
-*   Python (v3.10+)
-*   Metamask Wallet
-
-### 1. Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/KAVYAJOSHI1/VeriCred.git
-cd VeriCred
-
-# Install dependencies (Automated script recommended, or manual below)
-npm install
+```mermaid
+graph TD
+    User[User / Client] -->|Inputs: Income, Debt, Age| ZK[ZK Circuit (EZKL)]
+    ZK -->|Generate| Proof[ZK-SNARK Proof]
+    ZK -->|Private| Witness[Witness Data]
+    Proof -->|Submit Transaction| Blockchain[Ethereum / Hardhat Network]
+    Blockchain -->|Verify w/ Verifier Contract| Result[On-Chain Verification]
+    Result -->|True/False| DApp[Frontend Interface]
 ```
 
-### 2. Run Local Environment
+## 🛠 Tech Stack
 
-You need 4 terminal instances:
+### Core ZKML
+*   **EZKL**: For converting ONNX models into Halo2 circuits and managing proof generation.
+*   **Halo2**: The ZK-SNARK proving system backend.
+*   **PyTorch/ONNX**: For training and exporting the underlying credit scoring neural network.
 
-**Terminal 1: Blockchain Node**
+### Backend & API
+*   **Python**: Core logic for handling witness generation and proof orchestration.
+*   **FastAPI**: High-performance API server handling client requests.
+*   **SQLite**: Local storage for request history and proof logging.
+
+### Blockchain
+*   **Solidity**: `Halo2Verifier` smart contract.
+*   **Hardhat**: Development environment for compiling, deploying, and testing contracts.
+*   **Ethers.js**: Library for blockchain interaction.
+
+### Frontend
+*   **HTML/JS (Lite)**: Lightweight interface for rapid testing and demonstration.
+*   **Next.js (In Development)**: Full-featured React application for production deployment.
+
+## 🚀 Getting Started
+
+Follow these steps to set up the complete environment locally.
+
+### Prerequisites
+*   **Node.js** (v18+)
+*   **Python** (v3.10+)
+*   **Git**
+
+### 1. Repository Setup
+```bash
+git clone https://github.com/KAVYAJOSHI1/VeriCred.git
+cd VeriCred
+```
+
+### 2. Backend Setup
+The backend handles the heavy lifting of ZK proof generation.
+
+```bash
+# Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the backend server
+python3 backend/main.py
+```
+*Server will start at `http://localhost:8000`*
+
+### 3. Blockchain Setup (Local Testnet)
+Deploy the verify contract to a local Hardhat node.
+
+**Terminal 2:**
 ```bash
 cd blockchain
+npm install
 npx hardhat node
 ```
 
-**Terminal 2: Deploy Contracts**
+**Terminal 3:**
 ```bash
 cd blockchain
+# Deploy the Verifier contract
 npx hardhat run scripts/deploy.js --network localhost
-# Copy the deployed address if it changes from default
 ```
+*Note the deployed contract address for configuration.*
 
-**Terminal 3: Backend Server**
-```bash
-# Set up Python environment
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+### 4. Frontend Usage
+For the best testing experience, use the lightweight frontend currently integrated with the local backend.
 
-# Run Server
-python3 backend/main.py
-```
-
-**Terminal 4: Frontend**
-```bash
-cd frontend
-npm run dev
-```
-
-### 3. Usage
-1.  Open [http://localhost:3000](http://localhost:3000).
-2.  Connect your Wallet (use Hardhat test account).
-3.  Enter arbitrary financial data.
+1.  Navigate to `simple_frontend/`.
+2.  Open `index.html` in your browser (or serve via `python3 -m http.server 5500`).
+3.  Enter financial details (e.g., Age: 30, Income: 50000).
 4.  Click **Generate Proof**.
-5.  Once generated, click **Verify On-Chain**.
-6.  Watch the transaction confirm and the status update!
+5.  Watch as the system generates a ZK-SNARK proof and verifies it.
 
-## 🛠 Tech Stack
-*   **ZKML**: [EZKL](https://ezkl.xyz/), Halo2
-*   **Blockchain**: Hardhat, Solidity, Ethers.js
-*   **Backend**: Python, FastAPI, SQLite
-*   **Frontend**: Next.js 14, Tailwind CSS, RainbowKit, Wagmi
+---
+
+## 📂 Project Structure
+
+*   `ai/`: Neural network training and ONNX export scripts.
+*   `zk-circuit/`: EZKL artifacts, circuit settings, and SRS files.
+*   `backend/`: FastAPI application and proof orchestration logic.
+*   `blockchain/`: Hardhat project, Solidity contracts, and deployment scripts.
+*   `simple_frontend/`: Working client interface for demonstration.
+*   `frontend/`: Next.js application source code.
 
 ## 📄 License
-This project is open source and available under the MIT License.
+MIT License.

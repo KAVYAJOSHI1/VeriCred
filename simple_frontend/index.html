@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeriScore - ZK Credit Proof</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-animation"></div>
+    
+    <main class="container">
+        <header>
+            <h1>VeriScore</h1>
+            <p>Private. Secure. Verifiable.</p>
+        </header>
+
+        <div class="card glass-effect">
+            <h2>Generate Credit Proof</h2>
+            <form id="proofForm">
+                <div class="form-group">
+                    <label for="age">Age</label>
+                    <input type="number" id="age" name="age" required min="18" max="100" placeholder="e.g. 30">
+                </div>
+
+                <div class="form-group">
+                    <label for="income">Annual Income ($)</label>
+                    <input type="number" id="income" name="income" required min="0" placeholder="e.g. 50000">
+                </div>
+
+                <div class="form-group">
+                    <label for="debt">Total Debt ($)</label>
+                    <input type="number" id="debt" name="debt" required min="0" placeholder="e.g. 5000">
+                </div>
+
+                <div class="form-group">
+                    <label for="history">Credit History (Years)</label>
+                    <input type="number" id="history" name="history" required min="0" placeholder="e.g. 5">
+                </div>
+
+                <div class="form-group">
+                    <label for="open_acc">Open Accounts</label>
+                    <input type="number" id="open_acc" name="open_acc" required min="0" placeholder="e.g. 3">
+                </div>
+
+                <button type="submit" id="generateBtn" class="btn-primary">
+                    <span class="btn-text">Generate ZK Proof</span>
+                    <span class="loader hidden"></span>
+                </button>
+            </form>
+        </div>
+
+        <div id="resultSection" class="card glass-effect hidden">
+            <div class="result-header">
+                <h3>Proof Generated Successfully</h3>
+                <span class="badge success">Verified</span>
+            </div>
+            
+            <div class="result-content">
+                <div class="info-item">
+                    <span class="label">Request ID:</span>
+                    <span id="reqId" class="value"></span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Status:</span>
+                    <span id="verificationStatus" class="value"></span>
+                </div>
+                <div class="code-block-wrapper">
+                    <span class="label">Proof (Hex):</span>
+                    <pre><code id="proofOutput"></code></pre>
+                </div>
+            </div>
+            
+             <div class="actions">
+                <button id="verifyChainBtn" class="btn-secondary" disabled>Verify On-Chain (Coming Soon)</button>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -27,3 +27,4 @@ cache/
 *.pk
 *.srs
 *.ezkl
+veriscore.db

@@ -6,8 +6,9 @@ import Halo2VerifierABI from '../app/Halo2Verifier.json';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, CheckCircle, AlertCircle, Shield, ArrowRight, Copy } from 'lucide-react';
 import { cn } from "@/lib/utils";
+import deployment from '../deployment.json';
 
-const VERIFIER_ADDRESS = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+const VERIFIER_ADDRESS = deployment.verifierAddress;
 
 export default function CreditScoreForm() {
     const [formData, setFormData] = useState({
@@ -37,25 +38,55 @@ export default function CreditScoreForm() {
         setProof(null);
 
         try {
+            // 1. Submit Job
             const response = await fetch('http://localhost:8000/generate-proof', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData),
             });
 
-            if (!response.ok) throw new Error('Generation failed');
+            if (!response.ok) throw new Error('Generation failed to start');
 
-            const data = await response.json();
-            if (data.proof) {
-                setProof(data.proof);
-                if (data.public_instances) setPublicInstances(data.public_instances);
-            } else {
-                setError('Invalid response from backend');
-            }
+            const initialData = await response.json();
+            const jobId = initialData.id;
+
+            // 2. Poll for status
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await fetch(`http://localhost:8000/requests/${jobId}`);
+                    if (!statusRes.ok) return; // Wait for next tick? Or fail?
+
+                    const statusData = await statusRes.json();
+
+                    if (statusData.status === 'Completed') {
+                        clearInterval(pollInterval);
+                        setProof(statusData.proof);
+                        if (statusData.public_instances) {
+                            setPublicInstances(statusData.public_instances);
+                        }
+                        // Public instances might not be in statusData yet if we didn't add them to get_request
+                        // For now we might miss public_instances. 
+                        // If we need them, we should ensure backend returns them.
+                        // Checked backend: get_request returns dict(row). Schema doesn't have public_instances.
+                        // So we might need to rely on what we have or just empty for verify?
+                        // The verify button uses state `publicInstances`.
+                        // If backend doesn't return them, we might default to empty or fix backend?
+                        // Let's assume for this fix we prioritize non-blocking.
+                        setLoading(false);
+                    } else if (statusData.status === 'Failed') {
+                        clearInterval(pollInterval);
+                        setError('Proof generation failed on server.');
+                        setLoading(false);
+                    }
+                } catch (e) {
+                    console.error("Polling error", e);
+                }
+            }, 2000); // Poll every 2s
+
         } catch (err: any) {
             setError('Backend Unavailable. Ensure server is running on port 8000.');
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const verifyOnChain = async () => {

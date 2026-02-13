@@ -17,12 +17,12 @@
 
 ```mermaid
 graph TD
-    User["User / Client"] -->|Inputs: Income, Debt, Age| ZK["ZK Circuit (EZKL)"]
-    ZK -->|Generate| Proof["ZK-SNARK Proof"]
-    ZK -->|Private| Witness["Witness Data"]
-    Proof -->|Submit Transaction| Blockchain["Ethereum / Hardhat Network"]
-    Blockchain -->|Verify w/ Verifier Contract| Result["On-Chain Verification"]
-    Result -->|True/False| DApp["Frontend Interface"]
+    User[User Client] -->|Inputs: Income Debt Age| ZK[ZK Circuit EZKL]
+    ZK -->|Generate| Proof[ZK-SNARK Proof]
+    ZK -->|Private| Witness[Witness Data]
+    Proof -->|Submit Transaction| Blockchain[Ethereum Hardhat Network]
+    Blockchain -->|Verify w Verifier Contract| Result[On-Chain Verification]
+    Result -->|True False| DApp[Frontend Interface]
 ```
 
 ## 🛠 Tech Stack

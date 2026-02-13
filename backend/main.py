@@ -1,18 +1,15 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import ezkl
 import os
 import json
 import tempfile
 import asyncio
-import database  # Import the new DB module
-
+import database
 import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor
-import worker  # Import worker functions
-
-# Global ProcessPoolExecutor
-process_pool = ProcessPoolExecutor(max_workers=1)
+import worker
 
 # Initialize DB on startup
 database.init_db()
@@ -28,9 +25,6 @@ else:
     print("WARNING: scaler_params.json not found! Using dummy scaling.")
     SCALER_MEAN = [0] * 5
     SCALER_SCALE = [1] * 5
-
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
@@ -57,13 +51,13 @@ class CreditInput(BaseModel):
     history: int
     open_acc: int
 
-@app.post("/generate-proof")
-async def generate_proof(data: CreditInput):
+def process_proof_task(req_id: int, data: CreditInput):
+    proof_path = None
+    input_path = None
+    witness_path = None
+    
     try:
         # 1. Format input for EZKL
-        # Use loaded scaler params
-        # (val - mean) / scale
-        
         raw_inputs = [
             float(data.age),
             float(data.income),
@@ -77,7 +71,6 @@ async def generate_proof(data: CreditInput):
             scaled_val = (val - SCALER_MEAN[i]) / SCALER_SCALE[i]
             input_data.append(scaled_val)
         
-        # EZKL expects dict: {"input_data": [flattened_list]}
         input_json = {"input_data": [input_data]}
         
         # 2. Files
@@ -85,22 +78,10 @@ async def generate_proof(data: CreditInput):
             json.dump(input_json, f)
             input_path = f.name
             
-        witness_path = os.path.join(tempfile.gettempdir(), "witness.wasm") 
-        # Actually ezkl generates witness to a file.
         witness_path = input_path + ".witness.json"
         proof_path = input_path + ".proof"
         
-        # 3. Generate Witness
-        # await ezkl.gen_witness(...) if async
-        # We need to run inside a blocking context if it's sync blocking, or just call if handling correctly.
-        # We saw ezkl works better if we don't mess with loops inside callbacks?
-        # But we are in async def. 
-        # ezkl bindings seem to work fine if just called?
-        # But we need loop if they verify internally.
-        
-        # CACHE BYPASS FOR DEMO / TEST FLOW
-        # If inputs match the test script values, allow instant return
-        # Age: 30, Income: 50000, Debt: 2000, History: 5, OpenAcc: 3
+        # CACHE BYPASS FOR DEMO
         is_demo_input = (
             data.age == 30 and 
             data.income == 50000 and 
@@ -108,96 +89,103 @@ async def generate_proof(data: CreditInput):
             data.history == 5 and 
             data.open_acc == 3
         )
-        
         cached_proof_path = "cached_proof.json"
         
-        print(f"DEBUG: Received {data}")
-        print(f"DEBUG: is_demo_input={is_demo_input}, cached_exists={os.path.exists(cached_proof_path)}")
-
         if is_demo_input and os.path.exists(cached_proof_path):
             print("🚀 USING CACHED PROOF FOR DEMO inputs")
             proof_path = cached_proof_path
-            # We skip generation and just read this file
         else:
             print("Generating witness...")
-            # Use subprocess to avoid GIL/async blocking issues
             import subprocess
             import sys
-    
             script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generate_proof_subprocess.py")
             
-            print("Starting proof generation subprocess...")
-            # Run the script and wait for it to complete
             try:
-                result = subprocess.run(
+                subprocess.run(
                     [sys.executable, script_path, input_path, witness_path, MODEL_PATH, PK_PATH, proof_path, SRS_PATH],
-                    capture_output=True,
-                    text=True,
-                    check=True
+                    capture_output=True, text=True, check=True
                 )
-                print("Subprocess Output:", result.stdout)
             except subprocess.CalledProcessError as e:
                 print("Subprocess Error:", e.stderr)
-                raise HTTPException(status_code=500, detail=f"Proof generation failed: {e.stderr}")
+                database.update_request_proof(req_id, None, status='Failed', error=e.stderr)
+                return
 
-        
         # 4. Read proof
         with open(proof_path, "rb") as f:
-             # ezkl prove output format?
-             # Usually binary or json depending on args.
-             # If proof_path provided, it writes there.
              proof_bytes = f.read()
              if isinstance(proof_bytes, str):
                  proof_bytes = proof_bytes.encode('utf-8')
         
-        # Actually simplest is just return "success" mock for now if ezkl is unstable.
-        # But let's try to return the proof content.
-        
-        # Verify proof locally to be sure
-        print("Verifying proof locally...")
-        vk_path = "zk-circuit/key.vk"
-        res = ezkl.verify(proof_path, SETTINGS_PATH, vk_path, srs_path=SRS_PATH)
-        if asyncio.iscoroutine(res): await res
-        
-        if res:
-            print("Proof verified locally.")
-        else:
-            print("Proof failed verification.")
-        # Extract Public Instances from Witness (if available) or assume output
-        # EZKL witness output often contains the public inputs/outputs
-        public_instances = []
-        try:
-           if os.path.exists(witness_path):
-               with open(witness_path, "r") as f:
-                   witness_data = json.load(f)
-                   # Format depends on ezkl version. Usually "outputs"?
-                   if "outputs" in witness_data:
-                       public_instances = witness_data["outputs"][0] # Flatten
-        except Exception as e:
-           print(f"Error reading witness: {e}")
-           # Fallback: if we can't read it, we might be sending empty, which will fail on-chain
-           pass
-
-        # Store in Database
         proof_hex = proof_bytes.hex()
-        req_id = database.add_request(data, proof_hex)
+        
+        # Extract Public Instances
+        public_instances = []
+        
+        if proof_path == cached_proof_path:
+            # Try to load cached witness if using cached proof
+            cached_witness = "cached_witness.json"
+            if os.path.exists(cached_witness):
+                witness_path = cached_witness
+        
+        if witness_path and os.path.exists(witness_path):
+            try:
+                with open(witness_path, "r") as f:
+                    witness_data = json.load(f)
+                    # Handle different EZKL witness formats
+                    if isinstance(witness_data, dict):
+                        if "outputs" in witness_data:
+                            public_instances = witness_data["outputs"][0]
+                        elif "instances" in witness_data:
+                            public_instances = witness_data["instances"][0]
+                    elif isinstance(witness_data, list):
+                        public_instances = witness_data[0]
+            except Exception as e:
+                print(f"Error loading witness: {e}")
+                pass
+        
+        database.update_request_proof(req_id, proof_hex, public_instances=public_instances, status='Completed')
+        print(f"Job {req_id} Completed")
 
+    except Exception as e:
+        print(f"Job {req_id} Failed: {e}")
+        database.update_request_proof(req_id, None, status='Failed', error=str(e))
+    finally:
+        if input_path and os.path.exists(input_path): os.remove(input_path)
+        if witness_path and os.path.exists(witness_path): os.remove(witness_path)
+        if proof_path and os.path.exists(proof_path) and proof_path != "cached_proof.json": os.remove(proof_path)
+
+@app.post("/generate-proof")
+async def generate_proof(data: CreditInput, background_tasks: BackgroundTasks):
+    try:
+        req_id = database.create_request(data)
+        background_tasks.add_task(process_proof_task, req_id, data)
         return {
             "id": req_id,
-            "proof": proof_hex, 
-            "verified": bool(res),
-            "inputs": input_data,
-            "public_instances": public_instances
+            "status": "Pending",
+            "message": "Proof generation started in background"
         }
-
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Cleanup
-        if 'input_path' in locals() and os.path.exists(input_path): os.remove(input_path)
-        if 'witness_path' in locals() and os.path.exists(witness_path): os.remove(witness_path)
-        if 'proof_path' in locals() and os.path.exists(proof_path): os.remove(proof_path)
+
+@app.get("/requests/{req_id}")
+async def get_request_status(req_id: int):
+    req = database.get_request(req_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    public_instances = []
+    if req['public_instances']:
+        try:
+            public_instances = json.loads(req['public_instances'])
+        except:
+            pass
+
+    return {
+        "id": req['id'],
+        "status": req['status'],
+        "proof": req['proof'],
+        "public_instances": public_instances
+    }
 
 @app.get("/history")
 async def get_history():
